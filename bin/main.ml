@@ -9,7 +9,7 @@ module Timer = struct
     type t = UInt8.t
 end
 
-module type ADDRESS = sig
+module type Address = sig
     type t = UInt16.t
     val of_int : int -> t
     val add : t -> t
@@ -17,7 +17,7 @@ module type ADDRESS = sig
     val mul : t -> t
 end
 
-module Address : ADDRESS = struct
+module Address : Address = struct
     type t = UInt16.t
     let of_int = failwith "TODO"
     let add = failwith "TODO"
@@ -25,7 +25,8 @@ module Address : ADDRESS = struct
     let mul = failwith "TODO"
 end
 
-module type REGISTER = sig
+
+module type Register = sig
     type t
     val range : int
     val in_range : t -> bool
@@ -33,8 +34,7 @@ module type REGISTER = sig
     val compare : t -> t -> int
 end
 
-
-module Register : REGISTER = struct
+module Register : Register = struct
     type t = int
     let range = 0xf
     let in_range n : bool = n >= 0 && n <= range
@@ -49,7 +49,7 @@ module RegisterMap = Map.Make(Register)
 module Registers = struct
     open Register
     type t = UInt8.t RegisterMap.t
-    let create : t =
+    let create () =
         let nullbyte = UInt8.of_int 0 in
         RegisterMap.of_list @@ List.init range (fun x -> (of_int x, nullbyte))
     let find n (registers : t) =
@@ -102,15 +102,24 @@ type opcode =
     | Sknp of Register.t
     | Drw of {xpos : Register.t ; ypos : Register.t ; height : int}
 
-type stack = StackContents of int list
+module type Stack = sig
+    type 'a t
+    exception Empty
+    val create : unit -> 'a t
+    val push : 'a -> 'a t -> 'a t
+    val pop : 'a t -> 'a * 'a t
+end
 
-let push x (StackContents contents) =
-    StackContents (x::contents)
-
-let pop (StackContents contents) = 
-    match contents with
-    | [] -> failwith "stack underflow"
-    | h::t -> (h, StackContents t)
+module Stack : Stack = struct
+    type 'a t = StackContents of 'a list
+    exception Empty
+    let create () = StackContents []
+    let push x (StackContents s) = StackContents (x::s)
+    let pop (StackContents s) =
+        match s with
+        | [] -> raise Empty
+        | h::t -> h, StackContents t
+end
 
 
 type cpu = {
@@ -161,15 +170,14 @@ let rec loop cpu memory stack t =
     loop cpu' memory stack' t'
 
 let () =
-    let nullbyte = UInt8.of_int 0 in
     let memory = Bytes.make 4096 (char_of_int 0) in
-    let stack = StackContents [] in
+    let stack = Stack.create () in
     let cpu = {
         pc = UInt16.of_int 0x200;
         i = UInt16.of_int 0;
-        dt = nullbyte;
-        st = nullbyte;
-        vr = Registers.create
+        dt = UInt8.of_int 0;
+        st = UInt8.of_int 0;
+        vr = Registers.create ()
     } in
     loop cpu memory stack 0 (* TODO get clock *)
 
