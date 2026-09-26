@@ -1,0 +1,3 @@
+(test
+ (name test_shit8)
+ (libraries shit8))

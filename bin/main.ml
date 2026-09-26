@@ -1,0 +1,175 @@
+(*
+    0x000 - 0x1ff mostly unused, builtin font here
+    0x200 - 0xfff program and ram
+*)
+
+open Unsigned
+
+module Timer = struct
+    type t = UInt8.t
+end
+
+module type ADDRESS = sig
+    type t = UInt16.t
+    val of_int : int -> t
+    val add : t -> t
+    val sub : t -> t
+    val mul : t -> t
+end
+
+module Address : ADDRESS = struct
+    type t = UInt16.t
+    let of_int = failwith "TODO"
+    let add = failwith "TODO"
+    let sub = failwith "TODO"
+    let mul = failwith "TODO"
+end
+
+module type REGISTER = sig
+    type t
+    val range : int
+    val in_range : t -> bool
+    val of_int : int -> t
+    val compare : t -> t -> int
+end
+
+
+module Register : REGISTER = struct
+    type t = int
+    let range = 0xf
+    let in_range n : bool = n >= 0 && n <= range
+    let of_int n =
+        assert (in_range n);
+        n
+    let compare = Int.compare
+end
+
+module RegisterMap = Map.Make(Register)
+
+module Registers = struct
+    open Register
+    type t = UInt8.t RegisterMap.t
+    let create : t =
+        let nullbyte = UInt8.of_int 0 in
+        RegisterMap.of_list @@ List.init range (fun x -> (of_int x, nullbyte))
+    let find n (registers : t) =
+        assert (in_range n);
+        registers |> RegisterMap.find n
+    let update n value (registers : t) : t =
+        assert (in_range n);
+        registers |> RegisterMap.update n (Option.map (fun _ -> value))
+end
+
+type opcode =
+    | Scd of int
+    | Scu of int
+    | LdReg of Register.t * Register.t
+    | LdImmediate of Register.t * UInt8.t
+    | LdI of Address.t
+    | LdMemory of Register.t
+    | LdFromMemory of Register.t
+    | LdDelayTimer of Register.t
+    | LdFromDelayTimer of Register.t
+    | LdKey of Register.t
+    | LdSoundTimer of Register.t
+    | LdSprite of Register.t
+    | LdBCD of Register.t
+    | Cls
+    | Ret
+    | Call of Address.t
+    | Scr
+    | Scl
+    | Exit
+    | Low
+    | High
+    | Or of Register.t * Register.t  (**)
+    | And of Register.t * Register.t  (* all these set VF = 0 *)
+    | Xor of Register.t * Register.t (**)
+    | Se of Register.t * UInt8.t
+    | SeReg of Register.t * Register.t
+    | Sne of Register.t * UInt8.t
+    | SneReg of Register.t * Register.t
+    | Jump of Address.t
+    | Rnd of Register.t * UInt8.t
+    | AddI of Register.t
+    | AddImmediate of Register.t * UInt8.t (* do not set OF *)
+    | Add of Register.t * Register.t (* should set OF *)
+    | Sub of Register.t * Register.t
+    | Subn of Register.t * Register.t
+    | Shr of Register.t * Register.t
+    | Shl of Register.t * Register.t
+    | Skp of Register.t
+    | Sknp of Register.t
+    | Drw of {xpos : Register.t ; ypos : Register.t ; height : int}
+
+type stack = StackContents of int list
+
+let push x (StackContents contents) =
+    StackContents (x::contents)
+
+let pop (StackContents contents) = 
+    match contents with
+    | [] -> failwith "stack underflow"
+    | h::t -> (h, StackContents t)
+
+
+type cpu = {
+    pc : UInt16.t;
+    i : UInt16.t;
+    dt : Timer.t;
+    st : Timer.t;
+    vr : Registers.t
+}
+
+let fetch cpu memory : bytes * cpu =
+    let instr_bytes = Bytes.sub memory (UInt16.to_int cpu.pc) 2 in
+    let pc = UInt16.add cpu.pc (UInt16.of_int 2) in
+    let cpu' = {cpu with pc = pc} in
+    instr_bytes,cpu'
+
+let decode intsr : opcode =
+    failwith "TODO"
+
+let execute cpu memory stack = function
+    | Cls -> failwith "TODO"
+    | Jump addr -> {cpu with pc = addr},stack
+    | LdReg (d,s) -> failwith "TODO"
+    | LdI addr -> failwith "TODO"
+    | AddImmediate (r,v) ->
+            let newv = UInt8.add (cpu.vr |> Registers.find r) v in
+            {cpu with vr = cpu.vr |> Registers.update r newv},stack
+    | Drw x -> failwith "TODO"
+    | _ -> failwith "TODO"
+
+let rec loop cpu memory stack t =
+    (* handle inputs *)
+    (* decrement timers *)
+
+    let rec fde c s = function
+        | 0 -> c, s
+        | i ->
+            let (instr,cpu') = fetch cpu memory in
+            let opcode = decode instr in
+            let (cpu'', stack') = execute cpu' memory stack opcode in
+            fde cpu'' stack' (i - 1)
+    in
+    let (cpu', stack') = fde cpu stack 10 in
+
+    (* update screen *)
+    (* sleep (16.667 - t), update t *)
+    let t' = 123 in
+    loop cpu' memory stack' t'
+
+let () =
+    let nullbyte = UInt8.of_int 0 in
+    let memory = Bytes.make 4096 (char_of_int 0) in
+    let stack = StackContents [] in
+    let cpu = {
+        pc = UInt16.of_int 0x200;
+        i = UInt16.of_int 0;
+        dt = nullbyte;
+        st = nullbyte;
+        vr = Registers.create
+    } in
+    loop cpu memory stack 0 (* TODO get clock *)
+
