@@ -77,12 +77,6 @@ type opcode =
     | Cls
     | Ret
     | Call of Address.t
-    | Scr
-    | Scl
-    | Exit
-    | Low
-    | High
-    | Dw of Address.t
     | Or of Register.t * Register.t  (**)
     | And of Register.t * Register.t  (* all these set VF = 0 *)
     | Xor of Register.t * Register.t (**)
@@ -127,14 +121,49 @@ module Memory = struct
     type t = UInt8.t Array.t
 end
 
+module type Cpu = sig
+    type t = {
+        pc : UInt16.t;
+        i : UInt16.t;
+        dt : Timer.t;
+        st : Timer.t;
+        vr : Registers.t
+    }
+    val tick_timers : t -> t
+    val register_operation : (UInt8.t -> UInt8.t -> UInt8.t) -> Register.t -> Register.t -> t -> UInt8.t * t
+    val register_value : Register.t -> t -> UInt8.t
+    val update_register : Register.t -> UInt8.t -> t -> t
+end
 
-type cpu = {
-    pc : UInt16.t;
-    i : UInt16.t;
-    dt : Timer.t;
-    st : Timer.t;
-    vr : Registers.t
-}
+module Cpu : Cpu = struct
+    include Register
+    include Registers
+    type t = {
+        pc : UInt16.t;
+        i : UInt16.t;
+        dt : Timer.t;
+        st : Timer.t;
+        vr : Registers.t
+    }
+    let tick_timers c =
+        let aux n =
+            if n > UInt8.zero then UInt8.pred n else n
+        in
+        {
+            c with
+            dt = aux c.dt;
+            st = aux c.st;
+        }
+    let register_operation f dst src (cpu : t) =
+        let x = cpu.vr |> Registers.find dst in
+        let y = cpu.vr |> Registers.find src in
+        let newv = f x y in
+        newv, {cpu with vr = cpu.vr |> Registers.update dst newv}
+    let register_value r cpu =
+        failwith "TODO"
+    let update_register r n =
+        failwith "TODO"
+end
 
 module type Nibbles = sig
     type t = int list
@@ -160,7 +189,7 @@ module Nibbles : Nibbles = struct
         aux 0 ns
 end
 
-let fetch cpu memory : int list * cpu =
+let fetch (cpu : Cpu.t) memory : int list * Cpu.t =
     let instr =
         Array.to_list @@ Array.sub memory (UInt16.to_int cpu.pc) 2
         |> Nibbles.make in
@@ -229,20 +258,142 @@ let decode = function
             end
     | _ -> failwith "Unexpected"
 
-let execute cpu memory stack = function
+let execute (cpu : Cpu.t) memory stack = function
+    | Scd n -> failwith "TODO"
+    | Scu n -> failwith "TODO"
+    | LdReg (vx, vy) ->
+            let y = cpu |> Cpu.register_value vy in
+            cpu |> Cpu.update_register vx y, stack
+    | LdImmediate (vx, n) ->
+            cpu |> Cpu.update_register vx n, stack
+    | LdI addr ->
+            {cpu with i = addr}, stack
+    | LdMemory vx -> failwith "TODO"
+    | LdFromMemory vx -> failwith "TODO"
+    | LdDelayTimer vx ->
+            {cpu with dt = cpu |> Cpu.register_value vx}, stack
+    | LdFromDelayTimer vx ->
+            cpu |> Cpu.update_register vx cpu.dt, stack
+    | LdKey vx -> failwith "TODO"
+    | LdSoundTimer vx ->
+            {cpu with st = cpu |> Cpu.register_value vx}, stack
+    | LdSprite vx -> failwith "TODO"
+    | LdBCD vx -> failwith "TODO"
     | Cls -> failwith "TODO"
-    | Jump addr -> {cpu with pc = addr},stack
-    | LdReg (d,s) -> failwith "TODO"
-    | LdI addr -> failwith "TODO"
-    | AddImmediate (r,v) ->
-            let newv = UInt8.add (cpu.vr |> Registers.find r) v in
-            {cpu with vr = cpu.vr |> Registers.update r newv},stack
-    | Draw x -> failwith "TODO"
-    | _ -> failwith "TODO"
+    | Ret ->
+            let return_address, stack' = Stack.pop stack in
+            {cpu with pc = return_address}, stack'
+    | Call addr ->
+            let stack' = stack |> Stack.push cpu.pc in
+            {cpu with pc = addr}, stack'
+    | Or (vx, vy) ->
+            let _,cpu' = cpu |> Cpu.register_operation UInt8.logor vx vy in
+            cpu', stack
+    | And (vx, vy) ->
+            let _,cpu' = cpu |> Cpu.register_operation UInt8.logand vx vy in
+            cpu', stack
+    | Xor (vx, vy) ->
+            let _,cpu' = cpu |> Cpu.register_operation UInt8.logxor vx vy in
+            cpu', stack
+    | Se (vx, n) ->
+            let x = cpu |> Cpu.register_value vx in
+            if x = n then
+                {cpu with pc = UInt16.add cpu.pc (UInt16.of_int 2)}, stack
+            else
+                cpu, stack
+    | SeReg (vx, vy) ->
+            let x = cpu |> Cpu.register_value vx in
+            let y = cpu |> Cpu.register_value vy in
+            if x = y then
+                {cpu with pc = UInt16.add cpu.pc (UInt16.of_int 2)}, stack
+            else
+                cpu, stack
+    | Sne (vx, n) ->
+            let x = cpu |> Cpu.register_value vx in
+            if x <> n then
+                {cpu with pc = UInt16.add cpu.pc (UInt16.of_int 2)}, stack
+            else
+                cpu, stack
+    | SneReg (vx, vy) ->
+            let x = cpu |> Cpu.register_value vx in
+            let y = cpu |> Cpu.register_value vy in
+            if x <> y then
+                {cpu with pc = UInt16.add cpu.pc (UInt16.of_int 2)}, stack
+            else
+                cpu, stack
+    | Jump addr ->
+            {cpu with pc = addr},stack
+    | Jump0 addr ->
+            let z =
+                cpu
+                |> Cpu.register_value (Register.of_int 0)
+                |> UInt8.to_int
+                |> UInt16.of_int
+            in
+            {cpu with pc = UInt16.add cpu.pc z}, stack
+    | Rnd (vx, n) ->
+            let newv = UInt8.logand n (Random.int 0xff |> UInt8.of_int) in
+            cpu |> Cpu.update_register vx newv, stack
+    | AddI vx ->
+            let x =
+                cpu
+                |> Cpu.register_value vx
+                |> UInt8.to_int
+                |> UInt16.of_int
+            in
+            {cpu with i = UInt16.add cpu.i x}, stack
+    | AddImmediate (vx,v) ->
+            let newv = UInt8.add (cpu |> Cpu.register_value vx) v in
+            cpu |> Cpu.update_register vx newv, stack
+    | Add (vx, vy) ->
+            let x = cpu |> Cpu.register_value vx in
+            let result, cpu' = cpu |> Cpu.register_operation UInt8.add vx vy in
+            if result < x then
+                cpu' |> Cpu.update_register (Register.of_int 0xf) (UInt8.of_int 1), stack
+            else
+                cpu' |> Cpu.update_register (Register.of_int 0xf) (UInt8.of_int 0), stack
+    | Sub (vx, vy) ->
+            let x = cpu |> Cpu.register_value vx in
+            let result, cpu' = cpu |> Cpu.register_operation UInt8.sub vx vy in
+            if result > x then
+                cpu' |> Cpu.update_register (Register.of_int 0xf) (UInt8.of_int 1), stack
+            else
+                cpu' |> Cpu.update_register (Register.of_int 0xf) (UInt8.of_int 0), stack
+    | Subn (vx, vy) ->
+            let x = cpu |> Cpu.register_value vx in
+            let y = cpu |> Cpu.register_value vy in
+            let newv = UInt8.sub y x in
+            if newv > y then
+                cpu |> Cpu.update_register (Register.of_int 0xf) (UInt8.of_int 1), stack
+            else
+                cpu |> Cpu.update_register (Register.of_int 0xf) (UInt8.of_int 0), stack
+    | Shr (vx, vy) ->
+            let y = cpu |> Cpu.register_value vy in
+            let lsbit = UInt8.logand y (UInt8.of_int 1) in
+            let newv = UInt8.shift_right y 1 in
+            let cpu' =
+                cpu
+                |> Cpu.update_register vx newv
+                |> Cpu.update_register (Register.of_int 0xf) lsbit
+            in
+            cpu', stack
+    | Shl (vx, vy) ->
+            let y = cpu |> Cpu.register_value vy in
+            let msbit = UInt8.logand y (UInt8.of_int 0x80) in
+            let newv = UInt8.shift_left y 1 in
+            let cpu' =
+                cpu
+                |> Cpu.update_register vx newv
+                |> Cpu.update_register (Register.of_int 0xf) msbit
+            in
+            cpu', stack
+    | Skp vx -> failwith "TODO"
+    | Sknp vx -> failwith "TODO"
+    | Draw {xpos : Register.t ; ypos : Register.t ; height : int} -> failwith "TODO"
 
 let rec loop cpu memory stack t =
     (* handle inputs *)
-    (* decrement timers *)
+    let cpu' = Cpu.tick_timers cpu in
 
     let rec fde c s = function
         | 0 -> c, s
@@ -252,18 +403,18 @@ let rec loop cpu memory stack t =
             let (cpu'', stack') = execute cpu' memory stack opcode in
             fde cpu'' stack' (i - 1)
     in
-    let (cpu', stack') = fde cpu stack 10 in
+    let (cpu'', stack') = fde cpu' stack 10 in
     (* update screen *)
-    let timedelta = Unix.gettimeofday () -. t in
+    let timedelta = 1000. *. Unix.gettimeofday () -. t in
     let _ = Unix.sleepf @@ 16.667 -. timedelta in
-    let t' = Unix.gettimeofday () in
-    loop cpu' memory stack' t'
+    let t' = 1000. *. Unix.gettimeofday () in
+    loop cpu'' memory stack' t'
 
 let () =
     let nullbyte = UInt8.of_int 0 in
     let memory = Array.make 4096 nullbyte in
     let stack = Stack.create () in
-    let cpu = {
+    let cpu : Cpu.t = {
         pc = UInt16.of_int 0x200;
         i = UInt16.of_int 0;
         dt = nullbyte;
