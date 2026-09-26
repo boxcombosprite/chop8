@@ -82,6 +82,7 @@ type opcode =
     | Exit
     | Low
     | High
+    | Dw of Address.t
     | Or of Register.t * Register.t  (**)
     | And of Register.t * Register.t  (* all these set VF = 0 *)
     | Xor of Register.t * Register.t (**)
@@ -90,6 +91,7 @@ type opcode =
     | Sne of Register.t * UInt8.t
     | SneReg of Register.t * Register.t
     | Jump of Address.t
+    | Jump0 of Address.t
     | Rnd of Register.t * UInt8.t
     | AddI of Register.t
     | AddImmediate of Register.t * UInt8.t (* do not set OF *)
@@ -100,7 +102,7 @@ type opcode =
     | Shl of Register.t * Register.t
     | Skp of Register.t
     | Sknp of Register.t
-    | Drw of {xpos : Register.t ; ypos : Register.t ; height : int}
+    | Draw of {xpos : Register.t ; ypos : Register.t ; height : int}
 
 module type Stack = sig
     type 'a t
@@ -147,7 +149,7 @@ let execute cpu memory stack = function
     | AddImmediate (r,v) ->
             let newv = UInt8.add (cpu.vr |> Registers.find r) v in
             {cpu with vr = cpu.vr |> Registers.update r newv},stack
-    | Drw x -> failwith "TODO"
+    | Draw x -> failwith "TODO"
     | _ -> failwith "TODO"
 
 let rec loop cpu memory stack t =
