@@ -163,21 +163,22 @@ let rec loop cpu memory stack t =
             fde cpu'' stack' (i - 1)
     in
     let (cpu', stack') = fde cpu stack 10 in
-
     (* update screen *)
-    (* sleep (16.667 - t), update t *)
-    let t' = 123 in
+    let timedelta = Unix.gettimeofday () -. t in
+    let _ = Unix.sleepf @@ 16.667 -. timedelta in
+    let t' = Unix.gettimeofday () in
     loop cpu' memory stack' t'
 
 let () =
-    let memory = Bytes.make 4096 (char_of_int 0) in
+    let nullbyte = UInt8.of_int 0 in
+    let memory = Array.make 4096 nullbyte in
     let stack = Stack.create () in
     let cpu = {
         pc = UInt16.of_int 0x200;
         i = UInt16.of_int 0;
-        dt = UInt8.of_int 0;
-        st = UInt8.of_int 0;
+        dt = nullbyte;
+        st = nullbyte;
         vr = Registers.create ()
     } in
-    loop cpu memory stack 0 (* TODO get clock *)
+    loop cpu memory stack (Unix.gettimeofday ())
 
