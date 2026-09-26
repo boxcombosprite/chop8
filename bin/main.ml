@@ -189,6 +189,9 @@ module Nibbles : Nibbles = struct
         aux 0 ns
 end
 
+let (|:>) x f = snd @@ f x
+let (|.>) x f = fst @@ f x
+
 let fetch (cpu : Cpu.t) memory : int list * Cpu.t =
     let instr =
         Array.to_list @@ Array.sub memory (UInt16.to_int cpu.pc) 2
@@ -287,13 +290,22 @@ let execute (cpu : Cpu.t) memory stack = function
             let stack' = stack |> Stack.push cpu.pc in
             {cpu with pc = addr}, stack'
     | Or (vx, vy) ->
-            let _,cpu' = cpu |> Cpu.register_operation UInt8.logor vx vy in
+            let cpu' =
+                cpu
+                |:> Cpu.register_operation UInt8.logor vx vy
+                |> Cpu.update_register (Register.of_int 0xf) (UInt8.of_int 0) in
             cpu', stack
     | And (vx, vy) ->
-            let _,cpu' = cpu |> Cpu.register_operation UInt8.logand vx vy in
+            let cpu' =
+                cpu
+                |:> Cpu.register_operation UInt8.logand vx vy
+                |> Cpu.update_register (Register.of_int 0xf) (UInt8.of_int 0) in
             cpu', stack
     | Xor (vx, vy) ->
-            let _,cpu' = cpu |> Cpu.register_operation UInt8.logxor vx vy in
+            let cpu' =
+                cpu
+                |:> Cpu.register_operation UInt8.logxor vx vy
+                |> Cpu.update_register (Register.of_int 0xf) (UInt8.of_int 0) in
             cpu', stack
     | Se (vx, n) ->
             let x = cpu |> Cpu.register_value vx in
