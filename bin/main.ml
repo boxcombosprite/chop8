@@ -123,6 +123,10 @@ module Stack : Stack = struct
         | h::t -> h, StackContents t
 end
 
+module Memory = struct
+    type t = UInt8.t Array.t
+end
+
 
 type cpu = {
     pc : UInt16.t;
@@ -132,14 +136,98 @@ type cpu = {
     vr : Registers.t
 }
 
-let fetch cpu memory : bytes * cpu =
-    let instr_bytes = Bytes.sub memory (UInt16.to_int cpu.pc) 2 in
+module type Nibbles = sig
+    type t = int list
+    val make : UInt8.t list -> t
+    val to_int : t -> int
+end
+
+module Nibbles : Nibbles = struct
+    type t = int list
+    let nibbles (x: UInt8.t) =
+        let x' = (UInt8.to_int x) in
+        [
+            x' lsr 4 land 0xf;
+            x' land 0xf;
+        ]
+    let make bs = List.map nibbles bs |> List.concat
+    let to_int ns =
+        let rec aux acc xs =
+            match xs with
+            | [] -> acc
+            | h::t -> aux (acc lor h lsl 4) t
+        in
+        aux 0 ns
+end
+
+let fetch cpu memory : int list * cpu =
+    let instr =
+        Array.to_list @@ Array.sub memory (UInt16.to_int cpu.pc) 2
+        |> Nibbles.make in
     let pc = UInt16.add cpu.pc (UInt16.of_int 2) in
     let cpu' = {cpu with pc = pc} in
-    instr_bytes,cpu'
+    instr,cpu'
 
-let decode intsr : opcode =
-    failwith "TODO"
+let decode = function
+    | 0x0::rest ->
+            begin
+            match rest with
+            | [0x0; 0xe; 0x0] -> Cls
+            | [0x0; 0xe; 0xe] -> Ret
+            | _::rest -> failwith "Dw"
+            | _ -> failwith "Unexpected"
+            end
+    | 0x1::rest -> Jump (Address.of_int @@ Nibbles.to_int rest)
+    | 0x2::rest -> Call (Address.of_int @@ Nibbles.to_int rest)
+    | 0x3::x::rest -> Se (Register.of_int x, UInt8.of_int @@ Nibbles.to_int rest)
+    | 0x4::x::rest -> Sne (Register.of_int x, UInt8.of_int @@ Nibbles.to_int rest)
+    | [0x5;x;y;0x0] -> SeReg (Register.of_int x, Register.of_int y)
+    | 0x6::x::rest -> LdImmediate (Register.of_int x, UInt8.of_int @@ Nibbles.to_int rest)
+    | 0x7::x::rest -> AddImmediate (Register.of_int x, UInt8.of_int @@ Nibbles.to_int rest)
+    | [0x8;x;y;last] ->
+            let dst,src = let open Register in of_int x, of_int y in
+            begin
+            match last with
+            | 0x0 -> LdReg (dst, src)
+            | 0x1 -> Or (dst, src)
+            | 0x2 -> And (dst, src)
+            | 0x3 -> Xor (dst, src)
+            | 0x4 -> Add (dst, src)
+            | 0x5 -> Sub (dst, src)
+            | 0x6 -> Shr (dst, src)
+            | 0x7 -> Subn (dst, src)
+            | 0xe -> Shl (dst, src)
+            | _ -> failwith "Unexpected"
+            end
+    | 0x9::x::y::_ -> SneReg (Register.of_int x, Register.of_int y)
+    | 0xa::rest -> LdI (UInt16.of_int @@ Nibbles.to_int rest)
+    | 0xb::rest -> Jump0 (Address.of_int @@ Nibbles.to_int rest)
+    | 0xc::x::rest -> Rnd (Register.of_int x, UInt8.of_int @@ Nibbles.to_int rest)
+    | [0xd;x;y;n] -> Draw {xpos=Register.of_int x; ypos=Register.of_int y; height=n}
+    | 0xe::x::rest ->
+            let r = Register.of_int x in
+            begin
+            match rest with
+            | [0x9;0xe] -> Skp r
+            | [0xa;0x1] -> Sknp r
+            | _ -> failwith "Unexpected"
+            end
+    | 0xf::x::rest ->
+            let r = Register.of_int x in
+            begin
+            match rest with
+            | [0x0;0x7] -> LdFromDelayTimer r
+            | [0x0;0xa] -> LdKey r
+            | [0x1;0x5] -> LdDelayTimer r
+            | [0x1;0x8] -> LdSoundTimer r
+            | [0x1;0xe] -> AddI r
+            | [0x2;0x9] -> LdSprite r
+            | [0x3;0x3] -> LdBCD r
+            | [0x5;0x5] -> LdMemory r
+            | [0x6;0x5] -> LdFromMemory r
+            | _ -> failwith "Unexpected"
+            end
+    | _ -> failwith "Unexpected"
 
 let execute cpu memory stack = function
     | Cls -> failwith "TODO"
