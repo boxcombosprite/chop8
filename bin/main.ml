@@ -9,15 +9,14 @@ module Timer = struct
     type t = UInt8.t
 end
 
-module type Address = sig
+module Address : sig
     type t = UInt16.t
     val of_int : int -> t
-    val add : t -> t
-    val sub : t -> t
-    val mul : t -> t
-end
-
-module Address : Address = struct
+    val add : t -> int -> t
+    val sub : t -> int -> t
+end =
+struct
+    open UInt16
     type t = UInt16.t
     let of_int = failwith "TODO"
     let add = failwith "TODO"
@@ -26,15 +25,14 @@ module Address : Address = struct
 end
 
 
-module type Register = sig
+module Register : sig
     type t
     val range : int
     val in_range : t -> bool
     val of_int : int -> t
     val compare : t -> t -> int
-end
-
-module Register : Register = struct
+end =
+struct
     type t = int
     let range = 0xf
     let in_range n : bool = n >= 0 && n <= range
@@ -98,15 +96,15 @@ type opcode =
     | Sknp of Register.t
     | Draw of {xpos : Register.t ; ypos : Register.t ; height : int}
 
-module type Stack = sig
+
+module Stack : sig
     type 'a t
     exception Empty
     val create : unit -> 'a t
     val push : 'a -> 'a t -> 'a t
     val pop : 'a t -> 'a * 'a t
-end
-
-module Stack : Stack = struct
+end =
+struct
     type 'a t = StackContents of 'a list
     exception Empty
     let create () = StackContents []
@@ -117,11 +115,11 @@ module Stack : Stack = struct
         | h::t -> h, StackContents t
 end
 
-module Memory = struct
+module Memory : sig
     type t = UInt8.t Array.t
 end
 
-module type Cpu = sig
+module Cpu : sig
     type t = {
         pc : UInt16.t;
         i : UInt16.t;
@@ -133,9 +131,8 @@ module type Cpu = sig
     val register_operation : (UInt8.t -> UInt8.t -> UInt8.t) -> Register.t -> Register.t -> t -> UInt8.t * t
     val register_value : Register.t -> t -> UInt8.t
     val update_register : Register.t -> UInt8.t -> t -> t
-end
-
-module Cpu : Cpu = struct
+end =
+struct
     include Register
     include Registers
     type t = {
@@ -165,13 +162,12 @@ module Cpu : Cpu = struct
         failwith "TODO"
 end
 
-module type Nibbles = sig
+module Nibbles : sig
     type t = int list
     val make : UInt8.t list -> t
     val to_int : t -> int
-end
-
-module Nibbles : Nibbles = struct
+end =
+struct
     type t = int list
     let nibbles (x: UInt8.t) =
         let x' = (UInt8.to_int x) in
