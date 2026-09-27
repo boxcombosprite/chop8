@@ -1,4 +1,4 @@
 (executable
  (public_name shit8)
  (name main)
- (libraries shit8 integers unix))
+ (libraries shit8 integers unix raylib))

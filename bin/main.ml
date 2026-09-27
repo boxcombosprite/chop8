@@ -228,8 +228,10 @@ struct
         aux 0 ns
 end
 
-let (|:>) x f = snd @@ f x
-let (|.>) x f = fst @@ f x
+module FrameBuffer = struct
+    type t = int Array.t
+    let create () = Array.make 32 0
+end
 
 let fetch (cpu : Cpu.t) memory : int list * Cpu.t =
     let instr =
@@ -307,7 +309,7 @@ let decode op =
             end
     | _ -> instruction_decode_error op
 
-let execute (cpu : Cpu.t) memory stack = function
+let execute (cpu : Cpu.t) memory stack fb = function
     | Scd n -> failwith "TODO"
     | Scu n -> failwith "TODO"
     | LdReg (vx, vy) ->
@@ -452,35 +454,65 @@ let execute (cpu : Cpu.t) memory stack = function
     | Sknp vx -> failwith "TODO"
     | Draw {xpos : Register.t ; ypos : Register.t ; height : int} -> failwith "TODO"
 
-let rec loop cpu memory stack t =
-    (* handle inputs *)
-    let cpu' = Cpu.tick_timers cpu in
-
-    let rec fde c s = function
-        | 0 -> c, s
-        | i ->
-            let (instr,cpu') = fetch cpu memory in
-            let opcode = decode instr in
-            let (cpu'', stack') = execute cpu' memory stack opcode in
-            fde cpu'' stack' (i - 1)
+let render fb =
+    let draw_pixel (x,y) p =
+        let color =
+            match p with
+            | 1 -> Raylib.Color.white
+            | _ -> Raylib.Color.black
+        in
+        Raylib.draw_pixel x y color
     in
-    let (cpu'', stack') = fde cpu' stack 10 in
-    (* update screen *)
-    let timedelta = 1000. *. Unix.gettimeofday () -. t in
-    let _ = Unix.sleepf @@ 16.667 -. timedelta in
-    let t' = 1000. *. Unix.gettimeofday () in
-    loop cpu'' memory stack' t'
+    let draw_row y pixels =
+        0 -- (width - 1)
+        |> List.iter begin fun x ->
+                let p = pixels lsr (63 - x) land 1 in
+                draw_pixel (x,y) p
+        end
+    in
+    fb
+    |> Array.iteri begin fun y pixels ->
+            draw_row y pixels
+    end
+
+let rec fde m c s fb = function
+    | 0 -> c, s
+    | i ->
+        let (instr,cpu') = fetch c m in
+        let opcode = decode instr in
+        let (cpu'', stack') = execute cpu' m s fb opcode in
+        fde m cpu'' stack' fb (i - 1)
+
+let timeofday_ms () =
+    Unix.gettimeofday () *. 1000.
+
+let rec loop cpu memory stack fb t =
+    match Raylib.window_should_close () with
+    | true -> Raylib.close_window ()
+    | false ->
+        (* handle inputs *)
+        let cpu' = Cpu.tick_timers cpu in
+        let (cpu'', stack') = fde memory cpu' stack fb 10 in
+        let () = render fb in
+        let timedelta = timeofday_ms () -. t in
+        let () = Unix.sleepf @@ Float.max 0. (16.667 -. timedelta) in
+        let t' = timeofday_ms () in
+        loop cpu'' memory stack' fb t'
 
 let () =
-    let nullbyte = UInt8.of_int 0 in
-    let memory = Array.make 4096 nullbyte in
+    let () = Raylib.init_window width height "chop8" in
+    let () = Raylib.set_target_fps 60 in
+    let fb = FrameBuffer.create () in
+    let memory = Memory.create () in
+    let () = Memory.load_bytes memory font (Address.of_int 0x050) in
+    (* let () = memory |> Array.iter (UInt8.to_int >> Printf.printf "%#02x ") in *)
     let stack = Stack.create () in
     let cpu : Cpu.t = {
         pc = UInt16.of_int 0x200;
         i = UInt16.of_int 0;
-        dt = nullbyte;
-        st = nullbyte;
+        dt = UInt8.of_int 0;
+        st = UInt8.of_int 0;
         vr = Registers.create ()
     } in
-    loop cpu memory stack (Unix.gettimeofday ())
+    loop cpu memory stack fb (timeofday_ms ())
 
