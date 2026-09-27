@@ -616,10 +616,13 @@ let render fb =
                 let p = pixels lsr (63 - x) land 1 in
                 draw_pixel (x,y) p)
     in
-    fb
-    |> Array.iteri begin fun y pixels ->
-            draw_row y pixels
-    end
+    let () = Raylib.begin_drawing () in
+    let () =
+        fb
+        |> Array.iteri (fun y pixels ->
+                draw_row y pixels)
+    in
+    Raylib.end_drawing ()
 
 let rec fde c = function
     | 0 -> c
