@@ -378,8 +378,47 @@ let execute c = function
             {c with
                 cpu = {c.cpu with
                     i = addr}}
-    | LdMemory vx -> failwith "TODO"
-    | LdFromMemory vx -> failwith "TODO"
+    | LdMemory vx ->
+            let data =
+                0 -- Register.to_int vx
+                |> List.map Register.of_int
+                |> List.map (fun i ->
+                        c.cpu |> Cpu.register_value i)
+            in
+            let () = Memory.load c.memory data c.cpu.i in
+            let increment =
+                UInt16.(add
+                    (of_int (Register.to_int vx))
+                    (of_int 1))
+            in
+            {c with
+                cpu = {c.cpu with
+                    i = UInt16.add c.cpu.i increment}}
+    | LdFromMemory vx ->
+            let range = 0 -- Register.to_int vx in
+            let data =
+                range
+                |> List.map UInt16.(fun i -> add c.cpu.i (of_int i))
+                |> List.map @@ Memory.get c.memory
+            in
+            let load_chain =
+                List.map2 (
+                    fun i b ->
+                        fun cpu ->
+                            cpu |> Cpu.update_register i b)
+                    (range |> List.map Register.of_int)
+                    data
+                |> List.fold_left (>>) (fun x -> x)
+            in
+            let cpu' = load_chain c.cpu in
+            let increment =
+                UInt16.(add
+                    (of_int (Register.to_int vx))
+                    (of_int 1))
+            in
+            {c with
+                cpu = {cpu' with
+                    i = UInt16.add c.cpu.i increment}}
     | LdDelayTimer vx ->
             {c with
                 cpu = {c.cpu with
