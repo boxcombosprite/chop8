@@ -49,10 +49,10 @@ end =
 struct
     open UInt16
     type t = UInt16.t
-    let of_int = failwith "TODO"
-    let add = failwith "TODO"
-    let sub = failwith "TODO"
-    let mul = failwith "TODO"
+    let mask = logand (of_int 0xfff)
+    let of_int n = of_int n |> mask
+    let add x y = add x (of_int y) |> mask
+    let sub x y = sub x (of_int y) |> mask
 end
 
 
@@ -148,6 +148,21 @@ end
 
 module Memory : sig
     type t = UInt8.t Array.t
+    val create : unit -> t
+    val load_bytes : t -> UInt8.t List.t -> Address.t -> unit
+end =
+struct
+    type t = UInt8.t Array.t
+    let create () = Array.make 4096 (UInt8.of_int 0)
+    let load_bytes m src addr =
+        let rec aux xs i =
+            match xs with
+            | [] -> ()
+            | x::rest ->
+                    let () = Array.set m (UInt16.to_int i) x in
+                    aux rest (Address.add i 1)
+        in
+        aux src addr
 end
 
 module Cpu : sig
