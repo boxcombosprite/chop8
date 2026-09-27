@@ -36,6 +36,8 @@ let rec ( -- ) i j = if i > j then [] else i :: i + 1 -- j
 
 module Timer = struct
     type t = UInt8.t
+    let dec timer =
+        if timer > UInt8.zero then UInt8.pred timer else UInt8.zero
 end
 
 module Address : sig
@@ -172,23 +174,20 @@ struct
         vr : Registers.t
     }
     let tick_timers c =
-        let aux n =
-            if n > UInt8.zero then UInt8.pred n else n
-        in
         {
             c with
-            dt = aux c.dt;
-            st = aux c.st;
+            dt = Timer.dec c.dt;
+            st = Timer.dec c.st;
         }
-    let register_operation f dst src (cpu : t) =
-        let x = cpu.vr |> Registers.find dst in
-        let y = cpu.vr |> Registers.find src in
-        let newv = f x y in
-        newv, {cpu with vr = cpu.vr |> Registers.update dst newv}
     let register_value r cpu =
-        failwith "TODO"
-    let update_register r n =
-        failwith "TODO"
+        cpu.vr |> Registers.find r
+    let update_register r n cpu =
+        {cpu with vr = cpu.vr |> Registers.update r n}
+    let register_operation f dst src (cpu : t) =
+        let x = cpu |> register_value dst in
+        let y = cpu |> register_value src in
+        let newv = f x y in
+        newv, cpu |> update_register dst newv
 end
 
 module Nibbles : sig
