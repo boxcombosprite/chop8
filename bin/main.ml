@@ -61,6 +61,7 @@ module Register : sig
     val range : int
     val in_range : t -> bool
     val of_int : int -> t
+    val to_int : t -> int
     val compare : t -> t -> int
 end =
 struct
@@ -70,6 +71,8 @@ struct
     let of_int n =
         assert (in_range n);
         n
+    let to_int r =
+        r
     let compare = Int.compare
 end
 
