@@ -218,20 +218,27 @@ let (|.>) x f = fst @@ f x
 
 let fetch (cpu : Cpu.t) memory : int list * Cpu.t =
     let instr =
-        Array.to_list @@ Array.sub memory (UInt16.to_int cpu.pc) 2
-        |> Nibbles.make in
+        Array.sub memory (UInt16.to_int cpu.pc) 2
+        |> Array.to_list
+        |> Nibbles.make
+    in
     let pc = UInt16.add cpu.pc (UInt16.of_int 2) in
     let cpu' = {cpu with pc = pc} in
     instr,cpu'
 
-let decode = function
+exception InstructionDecodeError of string
+let instruction_decode_error op =
+    let repr = Printf.sprintf "%#4x" (Nibbles.to_int op) in
+    raise (InstructionDecodeError repr)
+
+let decode op =
+    match op with
     | 0x0::rest ->
             begin
             match rest with
             | [0x0; 0xe; 0x0] -> Cls
             | [0x0; 0xe; 0xe] -> Ret
-            | _::rest -> failwith "Dw"
-            | _ -> failwith "Unexpected"
+            | _ -> instruction_decode_error op
             end
     | 0x1::rest -> Jump (Address.of_int @@ Nibbles.to_int rest)
     | 0x2::rest -> Call (Address.of_int @@ Nibbles.to_int rest)
@@ -253,7 +260,7 @@ let decode = function
             | 0x6 -> Shr (dst, src)
             | 0x7 -> Subn (dst, src)
             | 0xe -> Shl (dst, src)
-            | _ -> failwith "Unexpected"
+            | _ -> instruction_decode_error op
             end
     | 0x9::x::y::_ -> SneReg (Register.of_int x, Register.of_int y)
     | 0xa::rest -> LdI (UInt16.of_int @@ Nibbles.to_int rest)
@@ -266,7 +273,7 @@ let decode = function
             match rest with
             | [0x9;0xe] -> Skp r
             | [0xa;0x1] -> Sknp r
-            | _ -> failwith "Unexpected"
+            | _ -> instruction_decode_error op
             end
     | 0xf::x::rest ->
             let r = Register.of_int x in
@@ -281,9 +288,9 @@ let decode = function
             | [0x3;0x3] -> LdBCD r
             | [0x5;0x5] -> LdMemory r
             | [0x6;0x5] -> LdFromMemory r
-            | _ -> failwith "Unexpected"
+            | _ -> instruction_decode_error op
             end
-    | _ -> failwith "Unexpected"
+    | _ -> instruction_decode_error op
 
 let execute (cpu : Cpu.t) memory stack = function
     | Scd n -> failwith "TODO"
@@ -384,28 +391,31 @@ let execute (cpu : Cpu.t) memory stack = function
     | Add (vx, vy) ->
             let x = cpu |> Cpu.register_value vx in
             let result, cpu' = cpu |> Cpu.register_operation UInt8.add vx vy in
+            let vf = Register.of_int 0xf in
             if result < x then
-                cpu' |> Cpu.update_register (Register.of_int 0xf) (UInt8.of_int 1), stack
+                cpu' |> Cpu.update_register vf (UInt8.of_int 1), stack
             else
-                cpu' |> Cpu.update_register (Register.of_int 0xf) (UInt8.of_int 0), stack
+                cpu' |> Cpu.update_register vf (UInt8.of_int 0), stack
     | Sub (vx, vy) ->
             let x = cpu |> Cpu.register_value vx in
             let result, cpu' = cpu |> Cpu.register_operation UInt8.sub vx vy in
+            let vf = Register.of_int 0xf in
             if result > x then
-                cpu' |> Cpu.update_register (Register.of_int 0xf) (UInt8.of_int 1), stack
+                cpu' |> Cpu.update_register vf (UInt8.of_int 1), stack
             else
-                cpu' |> Cpu.update_register (Register.of_int 0xf) (UInt8.of_int 0), stack
+                cpu' |> Cpu.update_register vf (UInt8.of_int 0), stack
     | Subn (vx, vy) ->
             let x = cpu |> Cpu.register_value vx in
             let y = cpu |> Cpu.register_value vy in
             let newv = UInt8.sub y x in
+            let vf = Register.of_int 0xf in
             if newv > y then
-                cpu |> Cpu.update_register (Register.of_int 0xf) (UInt8.of_int 1), stack
+                cpu |> Cpu.update_register vf (UInt8.of_int 1), stack
             else
-                cpu |> Cpu.update_register (Register.of_int 0xf) (UInt8.of_int 0), stack
+                cpu |> Cpu.update_register vf (UInt8.of_int 0), stack
     | Shr (vx, vy) ->
             let y = cpu |> Cpu.register_value vy in
-            let lsbit = UInt8.logand y (UInt8.of_int 1) in
+            let lsbit = UInt8.(logand y (of_int 1)) in
             let newv = UInt8.shift_right y 1 in
             let cpu' =
                 cpu
@@ -415,7 +425,7 @@ let execute (cpu : Cpu.t) memory stack = function
             cpu', stack
     | Shl (vx, vy) ->
             let y = cpu |> Cpu.register_value vy in
-            let msbit = UInt8.logand y (UInt8.of_int 0x80) in
+            let msbit = UInt8.(logand y (of_int 0x80)) in
             let newv = UInt8.shift_left y 1 in
             let cpu' =
                 cpu
