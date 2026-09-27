@@ -93,8 +93,6 @@ module Registers = struct
 end
 
 type opcode =
-    | Scd of int
-    | Scu of int
     | LdReg of Register.t * Register.t
     | LdImmediate of Register.t * UInt8.t
     | LdI of Address.t
@@ -182,8 +180,6 @@ module Cpu : sig
     val update_register : Register.t -> UInt8.t -> t -> t
 end =
 struct
-    include Register
-    include Registers
     type t = {
         pc : UInt16.t;
         i : UInt16.t;
@@ -321,8 +317,6 @@ let decode op =
     | _ -> instruction_decode_error op
 
 let execute c = function
-    | Scd n -> failwith "TODO"
-    | Scu n -> failwith "TODO"
     | LdReg (vx, vy) ->
             let y = c.cpu |> Cpu.register_value vy in
             {c with
@@ -513,10 +507,9 @@ let render fb =
     in
     let draw_row y pixels =
         0 -- (width - 1)
-        |> List.iter begin fun x ->
+        |> List.iter (fun x ->
                 let p = pixels lsr (63 - x) land 1 in
-                draw_pixel (x,y) p
-        end
+                draw_pixel (x,y) p)
     in
     fb
     |> Array.iteri begin fun y pixels ->
@@ -531,9 +524,6 @@ let rec fde c = function
         let c' = execute {c with cpu = cpu'} opcode in
         fde c' (i - 1)
 
-let timeofday_ms () =
-    Unix.gettimeofday () *. 1000.
-
 let rec loop c t =
     match Raylib.window_should_close () with
     | true -> Raylib.close_window ()
@@ -542,9 +532,9 @@ let rec loop c t =
         let cpu' = Cpu.tick_timers c.cpu in
         let c' = fde {c with cpu = cpu'} 10 in
         let () = render c.fb in
-        let timedelta = timeofday_ms () -. t in
-        let () = Unix.sleepf @@ Float.max 0. (16.667 -. timedelta) in
-        let t' = timeofday_ms () in
+        let timedelta = Unix.gettimeofday () -. t in
+        let () = Unix.sleepf @@ Float.max 0. (0.016667 -. timedelta) in
+        let t' = Unix.gettimeofday () in
         loop c' t'
 
 let () =
@@ -568,5 +558,5 @@ let () =
         stack;
         cpu;
     } in
-    loop chip8 (timeofday_ms ())
+    loop chip8 (Unix.gettimeofday ())
 
