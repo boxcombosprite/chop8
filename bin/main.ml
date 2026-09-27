@@ -187,12 +187,14 @@ end
 module Memory : sig
     type t = UInt8.t Array.t
     val create : unit -> t
-    val load_bytes : t -> UInt8.t List.t -> Address.t -> unit
+    val load : t -> UInt8.t List.t -> Address.t -> unit
+    val load_bytes : t -> Address.t -> bytes -> int -> unit
+    val get : t -> Address.t -> UInt8.t
 end =
 struct
     type t = UInt8.t Array.t
     let create () = Array.make 4096 (UInt8.of_int 0)
-    let load_bytes m src addr =
+    let load m src addr =
         let rec aux xs i =
             match xs with
             | [] -> ()
@@ -201,6 +203,12 @@ struct
                     aux rest (Address.add i 1)
         in
         aux src addr
+    let load_bytes m addr bs n =
+        Bytes.sub bs 0 n
+        |> Bytes.iteri (fun i b ->
+                let idx = UInt16.to_int (Address.add addr i) in
+                Array.set m idx (UInt8.of_int @@ Char.code b))
+    let get m addr = Array.get m (UInt16.to_int addr)
 end
 
 module Cpu : sig
@@ -600,8 +608,11 @@ let () =
     let () = Raylib.set_target_fps 60 in
     let fb = FrameBuffer.create () in
     let memory = Memory.create () in
-    let () = Memory.load_bytes memory font (Address.of_int 0x050) in
-    (* let () = memory |> Array.iter (UInt8.to_int >> Printf.printf "%#02x ") in *)
+    let () = Memory.load memory font (Address.of_int 0x050) in
+    let buf = Bytes.make 0xdff (Char.chr 0) in
+    let nbytes = Unix.read Unix.stdin buf 0 0xdff in
+    let () = Memory.load_bytes memory (Address.of_int 0x200) buf nbytes in
+    (* let () = memory |> Array.iter (UInt8.to_int >> Printf.eprintf "%#02x ") in *)
     let stack = Stack.create () in
     let cpu : Cpu.t = {
         pc = UInt16.of_int 0x200;
