@@ -128,6 +128,43 @@ type opcode =
     | Sknp of Register.t
     | Draw of {xpos : Register.t ; ypos : Register.t ; height : int}
 
+let key_of_code = let open Raylib.Key in function
+    | 0x0 -> X
+    | 0x1 -> One
+    | 0x2 -> Two
+    | 0x3 -> Three
+    | 0x4 -> Q
+    | 0x5 -> W
+    | 0x6 -> E
+    | 0x7 -> A
+    | 0x8 -> S
+    | 0x9 -> D
+    | 0xa -> Z
+    | 0xb -> C
+    | 0xc -> Four
+    | 0xd -> R
+    | 0xe -> F
+    | 0xf -> V
+    | _ -> failwith "bad key code"
+
+let code_of_key = let open Raylib.Key in function
+    | X -> Some 0x0
+    | One -> Some 0x1
+    | Two -> Some 0x2
+    | Three -> Some 0x3
+    | Q -> Some 0x4
+    | W -> Some 0x5
+    | E -> Some 0x6
+    | A -> Some 0x7
+    | S -> Some 0x8
+    | D -> Some 0x9
+    | Z -> Some 0xa
+    | C -> Some 0xb
+    | Four -> Some 0xc
+    | R -> Some 0xd
+    | F -> Some 0xe
+    | V -> Some 0xf
+    | _ -> None
 
 module Stack : sig
     type 'a t
@@ -206,23 +243,28 @@ end
 
 module Nibbles : sig
     type t = int list
+    val nibble_one : UInt8.t -> int * int
     val make : UInt8.t list -> t
     val to_int : t -> int
 end =
 struct
     type t = int list
-    let nibbles (x: UInt8.t) =
+    let nibble_one x =
         let x' = (UInt8.to_int x) in
+            ( x' lsr 4 land 0xf,
+              x' land 0xf)
+    let nibbles x =
+        let ns = nibble_one x in
         [
-            x' lsr 4 land 0xf;
-            x' land 0xf;
+            fst ns;
+            snd ns;
         ]
     let make bs = List.map nibbles bs |> List.concat
     let to_int ns =
         let rec aux acc xs =
             match xs with
             | [] -> acc
-            | h::t -> aux (acc lor h lsl 4) t
+            | h::t -> aux (acc lsl 4 lor h) t
         in
         aux 0 ns
 end
@@ -492,8 +534,24 @@ let execute c = function
             in
             {c with
                 cpu = cpu'}
-    | Skp vx -> failwith "TODO"
-    | Sknp vx -> failwith "TODO"
+    | Skp vx ->
+            let open Raylib in
+            let (_,ln) = Nibbles.nibble_one (c.cpu |> Cpu.register_value vx) in
+            let key = key_of_code ln in
+            if is_key_down key then
+                {c with
+                    cpu = {c.cpu with
+                        pc = UInt16.add c.cpu.pc (UInt16.of_int 2)}}
+            else c
+    | Sknp vx ->
+            let open Raylib in
+            let (_,ln) = Nibbles.nibble_one (c.cpu |> Cpu.register_value vx) in
+            let key = key_of_code ln in
+            if not (is_key_down key) then
+                {c with
+                    cpu = {c.cpu with
+                        pc = UInt16.add c.cpu.pc (UInt16.of_int 2)}}
+            else c
     | Draw {xpos : Register.t ; ypos : Register.t ; height : int} -> failwith "TODO"
 
 let render fb =
