@@ -76,9 +76,9 @@ struct
     let compare = Int.compare
 end
 
-module RegisterMap = Map.Make(Register)
 
 module Registers = struct
+    module RegisterMap = Map.Make(Register)
     open Register
     type t = UInt8.t RegisterMap.t
     let create () =
@@ -322,7 +322,7 @@ let decode op =
     | 0x6::x::rest -> LdImmediate (Register.of_int x, UInt8.of_int @@ Nibbles.to_int rest)
     | 0x7::x::rest -> AddImmediate (Register.of_int x, UInt8.of_int @@ Nibbles.to_int rest)
     | [0x8;x;y;last] ->
-            let dst,src = let open Register in of_int x, of_int y in
+            let dst,src = Register.(of_int x, of_int y) in
             begin
             match last with
             | 0x0 -> LdReg (dst, src)
@@ -401,16 +401,17 @@ let execute c = function
                 |> List.map UInt16.(fun i -> add c.cpu.i (of_int i))
                 |> List.map @@ Memory.get c.memory
             in
-            let load_chain =
+            let cpu' =
+                c.cpu
+                |> begin
                 List.map2 (
-                    fun i b ->
-                        fun cpu ->
+                    fun i b cpu ->
                             cpu |> Cpu.update_register i b)
                     (range |> List.map Register.of_int)
                     data
                 |> List.fold_left (>>) (fun x -> x)
+                end
             in
-            let cpu' = load_chain c.cpu in
             let increment =
                 UInt16.(add
                     (of_int (Register.to_int vx))
