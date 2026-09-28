@@ -330,6 +330,8 @@ module Cpu : sig
     val register_operation : (UInt8.t -> UInt8.t -> UInt8.t) -> Register.t -> Register.t -> t -> UInt8.t * t
     val register_value : Register.t -> t -> UInt8.t
     val update_register : Register.t -> UInt8.t -> t -> t
+    val inc_pc : t -> t
+    val dec_pc : t -> t
 end =
 struct
     type t = {
@@ -344,6 +346,16 @@ struct
             c with
             dt = Timer.dec c.dt;
             st = Timer.dec c.st;
+        }
+    let inc_pc c =
+        {
+            c with
+            pc = UInt16.(add c.pc (of_int 2))
+        }
+    let dec_pc c =
+        {
+            c with
+            pc = UInt16.(sub c.pc (of_int 2))
         }
     let register_value r cpu =
         cpu.vr |> Registers.find r
@@ -407,8 +419,10 @@ let fetch (cpu : Cpu.t) memory : int list * Cpu.t =
         |> Array.to_list
         |> Nibbles.make
     in
-    let pc = UInt16.add cpu.pc (UInt16.of_int 2) in
-    let cpu' = {cpu with pc = pc} in
+    let cpu' = cpu |> Cpu.inc_pc in
+    let () = Printf.eprintf "\n[" in
+    let () = instr |> List.iter (Printf.eprintf "%#x ; " ) in
+    let () = Printf.eprintf "]%!" in
     instr,cpu'
 
 exception InstructionDecodeError of string
