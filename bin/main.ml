@@ -738,21 +738,23 @@ let rec fde c = function
         let (instr,cpu') = fetch c.cpu c.memory in
         let opcode = decode instr in
         let c' = execute {c with cpu = cpu'} opcode in
-        fde c' (i - 1)
+        match c'.waiting with
+        | true -> c'
+        | false -> fde c' (i - 1)
 
-let rec loop c t =
+let rec loop c =
     match Raylib.window_should_close () with
     | true -> Raylib.close_window ()
     | false ->
         let keystate' = c.keystate |> KeyState.update in
         let () = keystate' |> KeyState.print in
         let cpu' = Cpu.tick_timers c.cpu in
-        let c' = fde {c with cpu = cpu'} 10 in
+        let ipf = if c.waiting then 0 else 10 in
+        let c' = fde {c with cpu = cpu'; keystate = keystate'} ipf in
+        let timedelta = Raylib.get_frame_time () in
         let () = render c.fb in
-        let timedelta = Unix.gettimeofday () -. t in
-        let () = Unix.sleepf @@ Float.max 0. (0.016667 -. timedelta) in
-        let t' = Unix.gettimeofday () in
-        loop c' t'
+        let () = Raylib.wait_time @@ Float.max 0. (0.016667 -. timedelta) in
+        loop c'
 
 let () =
     let () = Raylib.init_window width height "chop8" in
