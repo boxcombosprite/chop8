@@ -128,43 +128,150 @@ type opcode =
     | Sknp of Register.t
     | Draw of {xpos : Register.t ; ypos : Register.t ; height : int}
 
-let key_of_code = let open Raylib.Key in function
-    | 0x0 -> X
-    | 0x1 -> One
-    | 0x2 -> Two
-    | 0x3 -> Three
-    | 0x4 -> Q
-    | 0x5 -> W
-    | 0x6 -> E
-    | 0x7 -> A
-    | 0x8 -> S
-    | 0x9 -> D
-    | 0xa -> Z
-    | 0xb -> C
-    | 0xc -> Four
-    | 0xd -> R
-    | 0xe -> F
-    | 0xf -> V
-    | _ -> failwith "bad key code"
+module KeyPadKey : sig
+    type t
+    val make : Raylib.Key.t -> t option
+    val of_code : int -> t
+    val to_code : t -> int
+    val to_key : t -> Raylib.Key.t
+    val compare : t -> t -> int
+end =
+struct
+    open Raylib
+    type t = X | One | Two | Three | Q | W | E | A | S | D | Z | C | Four | R | F | V
 
-let code_of_key = let open Raylib.Key in function
-    | X -> Some 0x0
-    | One -> Some 0x1
-    | Two -> Some 0x2
-    | Three -> Some 0x3
-    | Q -> Some 0x4
-    | W -> Some 0x5
-    | E -> Some 0x6
-    | A -> Some 0x7
-    | S -> Some 0x8
-    | D -> Some 0x9
-    | Z -> Some 0xa
-    | C -> Some 0xb
-    | Four -> Some 0xc
-    | R -> Some 0xd
-    | F -> Some 0xe
-    | V -> Some 0xf
-    | _ -> None
+    let make = function
+        | Key.X -> Some X
+        | Key.One -> Some One
+        | Key.Two -> Some Two
+        | Key.Three -> Some Three
+        | Key.Q -> Some Q
+        | Key.W -> Some W
+        | Key.E -> Some E
+        | Key.A -> Some A
+        | Key.S -> Some S
+        | Key.D -> Some D
+        | Key.Z -> Some Z
+        | Key.C -> Some C
+        | Key.Four -> Some Four
+        | Key.R -> Some R
+        | Key.F -> Some F
+        | Key.V -> Some V
+        | _ -> None
+
+    let to_key = function
+        | X -> Key.X
+        | One -> Key.One
+        | Two -> Key.Two
+        | Three -> Key.Three
+        | Q -> Key.Q
+        | W -> Key.W
+        | E -> Key.E
+        | A -> Key.A
+        | S -> Key.S
+        | D -> Key.D
+        | Z -> Key.Z
+        | C -> Key.C
+        | Four -> Key.Four
+        | R -> Key.R
+        | F -> Key.F
+        | V -> Key.V
+
+    let of_code = function
+        | 0x0 -> X
+        | 0x1 -> One
+        | 0x2 -> Two
+        | 0x3 -> Three
+        | 0x4 -> Q
+        | 0x5 -> W
+        | 0x6 -> E
+        | 0x7 -> A
+        | 0x8 -> S
+        | 0x9 -> D
+        | 0xa -> Z
+        | 0xb -> C
+        | 0xc -> Four
+        | 0xd -> R
+        | 0xe -> F
+        | 0xf -> V
+        | _ -> invalid_arg "key code"
+
+    let to_code = function
+        | X -> 0x0
+        | One -> 0x1
+        | Two -> 0x2
+        | Three -> 0x3
+        | Q -> 0x4
+        | W -> 0x5
+        | E -> 0x6
+        | A -> 0x7
+        | S -> 0x8
+        | D -> 0x9
+        | Z -> 0xa
+        | C -> 0xb
+        | Four -> 0xc
+        | R -> 0xd
+        | F -> 0xe
+        | V -> 0xf
+
+    let compare k1 k2 =
+        Int.compare (to_code k1) (to_code k2)
+end
+
+module KeyState : sig
+    type t
+    val create : unit -> t
+    val get : KeyPadKey.t -> t -> bool
+    val released : t -> KeyPadKey.t option
+    val update : t -> t
+    val print : t -> unit
+end =
+struct
+    module KeyMap = Map.Make(KeyPadKey)
+    type t = bool KeyMap.t * KeyPadKey.t option
+    let create () = KeyMap.of_list @@ List.init 0xf (fun x -> (KeyPadKey.of_code x,false)), None
+    let get n ks = fst ks |> KeyMap.find n
+    let set n ks = fst ks |> KeyMap.update n (Option.map (fun _ -> true)), snd ks
+    let unset n ks = fst ks |> KeyMap.update n (Option.map (fun _ -> false)), Some n
+    let released ks = snd ks
+    let update (ks : t) =
+        let open Raylib in
+        let queued_keys =
+            let rec aux = function
+            | Key.Null -> []
+            | x ->
+                    begin
+                    match KeyPadKey.make x with
+                    | None -> aux (get_key_pressed ())
+                    | Some k -> k :: aux (get_key_pressed ())
+                    end
+            in
+            aux (Raylib.get_key_pressed ())
+        in
+        (fst ks, None)
+        |> begin
+        fst ks |> KeyMap.filter (fun _ state -> state)
+        |> KeyMap.bindings
+        |> List.map fst
+        |> List.map (fun k ks ->
+                match KeyPadKey.to_key k |> is_key_up with
+                | true -> ks |> unset k
+                | false -> ks)
+        |> List.fold_left (>>) (fun x -> x)
+        end |> begin
+        queued_keys
+        |> List.map (fun k ks -> ks |> set k)
+        |> List.fold_left (>>) (fun x -> x)
+        end
+    let print ks =
+        fst ks |> KeyMap.iter (fun k state -> Printf.eprintf "%x : %B\n" (KeyPadKey.to_code k) state);
+        let last =
+            match ks |> released with
+            | None -> 0
+            | Some x -> KeyPadKey.to_code x
+        in
+        Printf.eprintf "released: %x\n" last
+end
 
 module Stack : sig
     type 'a t
@@ -280,7 +387,9 @@ end
 module FrameBuffer = struct
     type t = int Array.t
     let create () = Array.make 32 0
+    let clear fb = Array.fill fb 0 32 0
 end
+
 
 type chop8 =
     {
@@ -288,6 +397,8 @@ type chop8 =
         fb : FrameBuffer.t;
         stack : UInt16.t Stack.t;
         cpu : Cpu.t;
+        keystate : KeyState.t;
+        waiting : bool;
     }
 
 let fetch (cpu : Cpu.t) memory : int list * Cpu.t =
@@ -583,22 +694,18 @@ let execute c = function
             {c with
                 cpu = cpu'}
     | Skp vx ->
-            let open Raylib in
             let (_,ln) = Nibbles.nibble_one (c.cpu |> Cpu.register_value vx) in
-            let key = key_of_code ln in
-            if is_key_down key then
+            let key = KeyPadKey.of_code ln in
+            if c.keystate |> KeyState.get key then
                 {c with
-                    cpu = {c.cpu with
-                        pc = UInt16.add c.cpu.pc (UInt16.of_int 2)}}
+                    cpu = c.cpu |> Cpu.inc_pc}
             else c
     | Sknp vx ->
-            let open Raylib in
             let (_,ln) = Nibbles.nibble_one (c.cpu |> Cpu.register_value vx) in
-            let key = key_of_code ln in
-            if not (is_key_down key) then
+            let key = KeyPadKey.of_code ln in
+            if not (c.keystate |> KeyState.get key) then
                 {c with
-                    cpu = {c.cpu with
-                        pc = UInt16.add c.cpu.pc (UInt16.of_int 2)}}
+                    cpu = c.cpu |> Cpu.inc_pc}
             else c
     | Draw {xpos : Register.t ; ypos : Register.t ; height : int} -> failwith "TODO"
 
@@ -637,7 +744,8 @@ let rec loop c t =
     match Raylib.window_should_close () with
     | true -> Raylib.close_window ()
     | false ->
-        (* handle inputs *)
+        let keystate' = c.keystate |> KeyState.update in
+        let () = keystate' |> KeyState.print in
         let cpu' = Cpu.tick_timers c.cpu in
         let c' = fde {c with cpu = cpu'} 10 in
         let () = render c.fb in
@@ -669,6 +777,8 @@ let () =
         fb;
         stack;
         cpu;
+        keystate = KeyState.create ();
+        waiting = false;
     } in
-    loop chip8 (Unix.gettimeofday ())
+    loop chip8
 
