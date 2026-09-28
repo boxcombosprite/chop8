@@ -559,7 +559,9 @@ let execute c = function
                     st = c.cpu |> Cpu.register_value vx} }
     | LdSprite vx -> failwith "TODO"
     | LdBCD vx -> failwith "TODO"
-    | Cls -> failwith "TODO"
+    | Cls ->
+            let () = FrameBuffer.clear c.fb in
+            c
     | Ret ->
             let return_address, stack' = Stack.pop c.stack in
             {c with
@@ -569,7 +571,7 @@ let execute c = function
             let stack' = c.stack |> Stack.push c.cpu.pc in
             {c with
                 cpu = {c.cpu with
-                    pc = addr};
+                    pc = Address.sub addr 2};
                 stack = stack' }
     | Or (vx, vy) ->
             let cpu' =
