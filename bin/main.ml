@@ -126,7 +126,7 @@ type opcode =
     | Shl of Register.t * Register.t
     | Skp of Register.t
     | Sknp of Register.t
-    | Draw of {xpos : Register.t ; ypos : Register.t ; height : int}
+    | Draw of {x : Register.t ; y : Register.t ; n : int}
 
 module KeyPadKey : sig
     type t
@@ -297,6 +297,7 @@ module Memory : sig
     val load : t -> UInt8.t List.t -> Address.t -> unit
     val load_bytes : t -> Address.t -> bytes -> int -> unit
     val get : t -> Address.t -> UInt8.t
+    val get_range : t -> Address.t -> int -> UInt8.t list
 end =
 struct
     type t = UInt8.t Array.t
@@ -316,6 +317,7 @@ struct
                 let idx = UInt16.to_int (Address.add addr i) in
                 Array.set m idx (UInt8.of_int @@ Char.code b))
     let get m addr = Array.get m (UInt16.to_int addr)
+    let get_range m addr n = Array.sub m (UInt16.to_int addr) n |> Array.to_list
 end
 
 module Cpu : sig
@@ -420,9 +422,6 @@ let fetch (cpu : Cpu.t) memory : int list * Cpu.t =
         |> Nibbles.make
     in
     let cpu' = cpu |> Cpu.inc_pc in
-    let () = Printf.eprintf "\n[" in
-    let () = instr |> List.iter (Printf.eprintf "%#x ; " ) in
-    let () = Printf.eprintf "]%!" in
     instr,cpu'
 
 exception InstructionDecodeError of string
@@ -465,7 +464,7 @@ let decode op =
     | 0xa::rest -> LdI (UInt16.of_int @@ Nibbles.to_int rest)
     | 0xb::rest -> Jump0 (Address.of_int @@ Nibbles.to_int rest)
     | 0xc::x::rest -> Rnd (Register.of_int x, UInt8.of_int @@ Nibbles.to_int rest)
-    | [0xd;x;y;n] -> Draw {xpos=Register.of_int x; ypos=Register.of_int y; height=n}
+    | [0xd;x;y;n] -> Draw {x=Register.of_int x; y=Register.of_int y; n=n}
     | 0xe::x::rest ->
             let r = Register.of_int x in
             begin
@@ -512,8 +511,7 @@ let execute c =
             let data =
                 0 -- Register.to_int x
                 |> List.map Register.of_int
-                |> List.map (fun i ->
-                        c.cpu |> Cpu.register_value i)
+                |> List.map (fun i -> v i)
             in
             let () = Memory.load c.memory data c.cpu.i in
             let increment =
@@ -717,9 +715,17 @@ let execute c =
                 {c with
                     cpu = c.cpu |> Cpu.inc_pc}
             else c
-    | Draw {xpos : Register.t ; ypos : Register.t ; height : int} ->
-            {c with
-                waiting = true}
+    | Draw {x : Register.t ; y : Register.t ; n : int} ->
+            let sprite = Memory.get_range c.memory c.cpu.i n |> List.map UInt8.to_int in
+            let vx_i = UInt8.to_int (v x) in
+            let vy_i = UInt8.to_int (v y) in
+            for i=0 to n - 1 do
+                let row = (i + vy_i) mod height in
+                c.fb.(row) <- c.fb.(row) lxor (((List.nth sprite i) lsl 56) lsr (vx_i mod width))
+            done;
+            c
+            (* {c with *)
+            (*     waiting = true} *)
 
 let render fb =
     let draw_pixel (x,y) p =
