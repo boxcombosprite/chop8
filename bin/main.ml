@@ -765,8 +765,6 @@ let rec loop c =
     | true -> Raylib.close_window ()
     | false ->
         let keystate' = c.keystate |> KeyState.update in
-        let () = keystate' |> KeyState.print in
-        let () = Printf.eprintf "%!" in
         let cpu' = Cpu.tick_timers c.cpu in
         let ipf = if c.waiting then 0 else 10 in
         let c' = fde {c with cpu = cpu'; keystate = keystate'} ipf in

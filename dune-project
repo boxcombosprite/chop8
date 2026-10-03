@@ -1,26 +1,21 @@
 (lang dune 3.23)
 
-(name shit8)
-
-(generate_opam_files true)
+(name chop8)
 
 (source
- (github username/reponame))
+ (github boxcombosprite/chop8))
 
-(authors "Author Name <author@example.com>")
+(authors "haze")
 
-(maintainers "Maintainer Name <maintainer@example.com>")
+(license WTFPL)
 
-(license LICENSE)
-
-(documentation https://url/to/documentation)
+(documentation https://github.com/boxcombosprite/chop8)
 
 (package
- (name shit8)
- (synopsis "A short synopsis")
- (description "A longer description")
- (depends ocaml integers)
+ (name chop8)
+ (synopsis "chip8 in shitcaml (barely)")
+ (description "ts not worth a description")
+ (depends ocaml integers raylib)
  (tags
-  ("add topics" "to describe" your project)))
+  ("emu" "cosmac")))
 
-; See the complete stanza docs at https://dune.readthedocs.io/en/stable/reference/dune-project/index.html
