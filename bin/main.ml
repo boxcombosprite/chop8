@@ -582,7 +582,8 @@ let execute c =
             let return_address, stack' = Stack.pop c.stack in
             {c with
                 cpu = {c.cpu with
-                    pc = return_address} }
+                    pc = return_address};
+                stack = stack'}
     | Call addr ->
             let stack' = c.stack |> Stack.push c.cpu.pc in
             {c with
