@@ -429,6 +429,8 @@ let instruction_decode_error op =
     let repr = Printf.sprintf "%#4x" (Nibbles.to_int op) in
     raise (InstructionDecodeError repr)
 
+exception InstructionExecutionError of string
+
 let decode op =
     match op with
     | 0x0::rest ->
@@ -555,7 +557,18 @@ let execute c =
     | LdFromDelayTimer x ->
             {c with
                 cpu = load x c.cpu.dt }
-    | LdKey x -> failwith "TODO" (* break and wait for next released key i htink *)
+    | LdKey x ->
+            if not c.waiting then
+                {c with waiting = true}
+            else
+                begin
+                match c.keystate |> KeyState.released with
+                | None -> raise (InstructionExecutionError "expected a valid released keystate")
+                | Some k ->
+                    {c with
+                        cpu = c.cpu |> Cpu.update_register x (UInt8.of_int (KeyPadKey.to_code k));
+                        waiting = false}
+                end
     | LdSoundTimer x ->
             {c with
                 cpu = {c.cpu with
