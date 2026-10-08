@@ -573,8 +573,13 @@ let execute c =
             {c with
                 cpu = {c.cpu with
                     st = v x} }
-    | LdSprite vx -> failwith "TODO"
-    | LdBCD vx -> failwith "TODO"
+    | LdSprite x ->
+            let lowest_nibble = snd (Nibbles.nibble_one (v x)) in
+            let offset = 5 * lowest_nibble in
+            {c with
+                cpu = {c.cpu with
+                    i = UInt16.of_int (0x050 + offset)}}
+    | LdBCD x -> failwith "TODO"
     | Cls ->
             let () = FrameBuffer.clear c.fb in
             c
