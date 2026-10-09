@@ -66,8 +66,8 @@ module Register : sig
 end =
 struct
     type t = int
-    let range = 0xf
-    let in_range n : bool = n >= 0 && n <= range
+    let range = 0x10
+    let in_range n : bool = n >= 0 && n < range
     let of_int n =
         assert (in_range n);
         n
@@ -229,8 +229,8 @@ end =
 struct
     module KeyMap = Map.Make(KeyPadKey)
     type t = bool KeyMap.t * KeyPadKey.t option
-    let create () = KeyMap.of_list @@ List.init 0xf (fun x -> (KeyPadKey.of_code x,false)), None
-    let get n ks = fst ks |> KeyMap.find n
+    let create () = KeyMap.of_list @@ List.init 0x10 (fun x -> (KeyPadKey.of_code x,false)), None
+    let get n (ks : t) = fst ks |> KeyMap.find n
     let set n ks = fst ks |> KeyMap.update n (Option.map (fun _ -> true)), snd ks
     let unset n ks = fst ks |> KeyMap.update n (Option.map (fun _ -> false)), Some n
     let released ks = snd ks
@@ -399,9 +399,9 @@ struct
 end
 
 module FrameBuffer = struct
-    type t = int Array.t
-    let create () = Array.make 32 0
-    let clear fb = Array.fill fb 0 32 0
+    type t = Int64.t Array.t
+    let create () = Array.make 32 0L
+    let clear (fb : t) = Array.fill fb 0 32 0L
 end
 
 
@@ -495,7 +495,7 @@ let decode op =
 let reg_value cpu r = cpu |> Cpu.register_value r
 let load_reg cpu r v = cpu |> Cpu.update_register r v
 
-let execute c = 
+let execute c =
     let v = reg_value c.cpu in
     let load = load_reg c.cpu in
     function
@@ -579,7 +579,7 @@ let execute c =
             {c with
                 cpu = {c.cpu with
                     i = UInt16.of_int (0x050 + offset)}}
-    | LdBCD x -> failwith "TODO"
+    | LdBCD x -> c (* TODO *)
     | Cls ->
             let () = FrameBuffer.clear c.fb in
             c
@@ -593,7 +593,7 @@ let execute c =
             let stack' = c.stack |> Stack.push c.cpu.pc in
             {c with
                 cpu = {c.cpu with
-                    pc = Address.sub addr 2};
+                    pc = addr};
                 stack = stack' }
     | Or (x, y) ->
             let cpu' =
@@ -688,16 +688,15 @@ let execute c =
                 {c with
                     cpu = cpu' |> Cpu.update_register f (UInt8.of_int 0)}
     | Subn (x, y) ->
-            let vx = v x in
-            let vy = v y in
-            let newv = UInt8.sub vy vx in
+            let newv = UInt8.sub (v y) (v x) in
+            let cpu' = load x newv in
             let f = Register.of_int 0xf in
-            if newv > vy then
+            if newv > (v y) then
                 {c with
-                    cpu = load f (UInt8.of_int 1)}
+                    cpu = cpu' |> Cpu.update_register f (UInt8.of_int 1)}
             else
                 {c with
-                    cpu = load f (UInt8.of_int 0)}
+                    cpu = cpu' |> Cpu.update_register f (UInt8.of_int 0)}
     | Shr (x, y) ->
             let vy = v y in
             let lsbit = UInt8.(logand vy (of_int 1)) in
@@ -735,18 +734,23 @@ let execute c =
                     cpu = c.cpu |> Cpu.inc_pc}
             else c
     | Draw {x : Register.t ; y : Register.t ; n : int} ->
-            let sprite = Memory.get_range c.memory c.cpu.i n |> List.map UInt8.to_int in
+            let sprite = Memory.get_range c.memory c.cpu.i n |> List.map UInt8.to_int64 in
             let vx_i = UInt8.to_int (v x) in
             let vy_i = UInt8.to_int (v y) in
             for i=0 to n - 1 do
                 let row = (i + vy_i) mod height in
-                c.fb.(row) <- c.fb.(row) lxor (((List.nth sprite i) lsl 56) lsr (vx_i mod width))
+                c.fb.(row) <- Int64.(
+                    logxor
+                        c.fb.(row)
+                        (shift_right_logical
+                            (shift_left (List.nth sprite i) 56)
+                            (vx_i mod width)))
             done;
             c
             (* {c with *)
             (*     waiting = true} *)
 
-let render fb =
+let render (fb : FrameBuffer.t) =
     let draw_pixel (x,y) p =
         let color =
             match p with
@@ -758,8 +762,13 @@ let render fb =
     let draw_row y pixels =
         0 -- (width - 1)
         |> List.iter (fun x ->
-                let p = pixels lsr (63 - x) land 1 in
-                draw_pixel (x,y) p)
+                let p =
+                    Int64.(logand
+                        (shift_right_logical
+                            pixels
+                            (63 - x))
+                        (of_int 1)) in
+                draw_pixel (x,y) (Int64.to_int p))
     in
     let () = Raylib.begin_drawing () in
     let () =
