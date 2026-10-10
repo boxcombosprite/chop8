@@ -683,24 +683,23 @@ let execute c =
             let f = Register.of_int 0xf in
             if vx' > vx then
                 {c with
-                    cpu = cpu' |> Cpu.update_register f (UInt8.of_int 1)}
+                    cpu = cpu' |> Cpu.update_register f (UInt8.of_int 0)}
             else
                 {c with
-                    cpu = cpu' |> Cpu.update_register f (UInt8.of_int 0)}
+                    cpu = cpu' |> Cpu.update_register f (UInt8.of_int 1)}
     | Subn (x, y) ->
             let newv = UInt8.sub (v y) (v x) in
             let cpu' = load x newv in
             let f = Register.of_int 0xf in
             if newv > (v y) then
                 {c with
-                    cpu = cpu' |> Cpu.update_register f (UInt8.of_int 1)}
+                    cpu = cpu' |> Cpu.update_register f (UInt8.of_int 0)}
             else
                 {c with
-                    cpu = cpu' |> Cpu.update_register f (UInt8.of_int 0)}
+                    cpu = cpu' |> Cpu.update_register f (UInt8.of_int 1)}
     | Shr (x, y) ->
-            let vy = v y in
-            let lsbit = UInt8.(logand vy (of_int 1)) in
-            let newv = UInt8.shift_right vy 1 in
+            let lsbit = UInt8.(logand (v y) (of_int 1)) in
+            let newv = UInt8.shift_right (v y) 1 in
             let cpu' =
                 c.cpu
                 |> Cpu.update_register x newv
@@ -709,9 +708,8 @@ let execute c =
             {c with
                 cpu = cpu'}
     | Shl (x, y) ->
-            let vy = v y in
-            let msbit = UInt8.(logand vy (of_int 0x80)) in
-            let newv = UInt8.shift_left vy 1 in
+            let msbit = UInt8.(logand (shift_right (v y) 7) (of_int 1)) in
+            let newv = UInt8.shift_left (v y) 1 in
             let cpu' =
                 c.cpu
                 |> Cpu.update_register x newv
