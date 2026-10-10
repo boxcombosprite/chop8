@@ -559,14 +559,15 @@ let execute c =
                 cpu = load x c.cpu.dt }
     | LdKey x ->
             if not c.waiting then
-                {c with waiting = true}
+                {c with waiting = true;
+                        cpu = c.cpu |> Cpu.dec_pc}
             else
                 begin
                 match c.keystate |> KeyState.released with
                 | None -> raise (InstructionExecutionError "expected a valid released keystate")
                 | Some k ->
                     {c with
-                        cpu = c.cpu |> Cpu.update_register x (UInt8.of_int (KeyPadKey.to_code k));
+                        cpu = load x (UInt8.of_int (KeyPadKey.to_code k));
                         waiting = false}
                 end
     | LdSoundTimer x ->
@@ -791,8 +792,13 @@ let rec loop c =
     | true -> Raylib.close_window ()
     | false ->
         let keystate' = c.keystate |> KeyState.update in
+        let should_wait =
+            match keystate' |> KeyState.released with
+            | None -> c.waiting
+            | Some _ -> false
+        in
         let cpu' = Cpu.tick_timers c.cpu in
-        let ipf = if c.waiting then 0 else 10 in
+        let ipf = if should_wait then 0 else 10 in
         let c' = fde {c with cpu = cpu'; keystate = keystate'} ipf in
         let timedelta = Raylib.get_frame_time () in
         let () = render c.fb in
